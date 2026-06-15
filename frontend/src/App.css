@@ -1,0 +1,14 @@
+/* Custom styles for College Calendar System */
+* {
+  box-sizing: border-box;
+}
+
+/* Smooth scrolling for better UX */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Ensure calendar cells maintain aspect ratio */
+.aspect-square {
+  aspect-ratio: 1 / 1;
+}
