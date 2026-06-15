@@ -9,7 +9,13 @@ const MasterMeta = require('./models/MasterMeta');
 const Group = require('./models/Group');
 
 const app = express();
+
+// Explicit CORS handling: respond to preflight (OPTIONS) requests immediately
+// with the headers browsers require for non-GET requests (POST/DELETE used by
+// uploads), before any other middleware (e.g. DB connection) runs.
 app.use(cors());
+app.options('*', cors());
+
 app.use(express.json({ limit: '10mb' }));
 
 const MONGODB_URI = process.env.MONGODB_URI;
