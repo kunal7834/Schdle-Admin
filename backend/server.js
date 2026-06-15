@@ -6,6 +6,7 @@ require('dotenv').config();
 const Event = require('./models/Event');
 const Roster = require('./models/Roster');
 const MasterMeta = require('./models/MasterMeta');
+const Group = require('./models/Group');
 
 const app = express();
 app.use(cors());
@@ -117,6 +118,46 @@ app.get('/api/rosters', async (req, res) => {
       result[r.section] = r.students;
     }
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- Groups ----------------
+app.get('/api/groups', async (req, res) => {
+  try {
+    const groups = await Group.find({}, { _id: 0 });
+    const result = Object.fromEntries(groups.map(g => [g.name, g.members]));
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/groups', async (req, res) => {
+  try {
+    const { name, members } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Group name is required' });
+    }
+    const group = await Group.findOneAndUpdate(
+      { name },
+      { name, members: members || [] },
+      { upsert: true, new: true, projection: { _id: 0 } }
+    );
+    res.json(group);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/groups/:name', async (req, res) => {
+  try {
+    const result = await Group.deleteOne({ name: req.params.name });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

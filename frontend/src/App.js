@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Calendar, ChevronLeft, ChevronRight, ChevronDown, MapPin, Users, Upload, Trash2, Lock } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, ChevronDown, MapPin, Users, Upload, Trash2, Lock, Plus, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   fetchEvents, createEvents, deleteEvent as apiDeleteEvent,
   fetchRosters, saveRoster,
+  fetchGroups, saveGroup, deleteGroup as apiDeleteGroup,
   uploadMaster, clearMaster as apiClearMaster, fetchMasterMeta,
 } from '@/api';
 
@@ -22,14 +23,40 @@ const MASTER_SKIP_TOKENS = new Set(['LUNCH BREAK', 'LUNCH', 'BREAK', '']);
 
 // Admin credentials (email/username + password)
 const ADMIN_ACCOUNTS = [
-  { username: 'Programme@iimk', password: 'no915class', label: 'Programme Office' },
-  { username: 'Placement@iimk', password: 'hojayega',   label: 'Placement Office' },
+  { username: 'programme@iimk.ac.in', password: 'no915class', label: 'Programme Office' },
+  { username: 'placement@iimk.ac.in', password: 'hojayega',   label: 'Placement Office' },
 ];
 
 const emptyRosters = () => Object.fromEntries(SECTIONS.map(s => [s, []]));
 
+// ---------------- Confirm Dialog ----------------
+const ConfirmDialog = ({ open, title, message, onConfirm, onCancel }) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6 max-w-sm w-full mx-4">
+        <h3 className="text-base font-semibold text-slate-900 mb-2">{title}</h3>
+        <p className="text-sm text-slate-600 mb-5">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-medium">No</button>
+          <button onClick={onConfirm} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium">Yes, Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------- IIMK Header Banner ----------------
+const IIMKHeader = () => (
+  <div className="w-full bg-white border-b border-slate-200 shadow-sm">
+    <div className="max-w-7xl mx-auto px-6 py-3">
+      <img src="/iimklogo.png" alt="Indian Institute of Management Kozhikode" className="h-20 w-auto object-contain object-left" />
+    </div>
+  </div>
+);
+
 // ---------------- Calendar View ----------------
-const CalendarView = ({ currentMonth, setCurrentMonth, selectedDate, setSelectedDate, getEventsForDate, userType, viewMode, setViewMode }) => {
+const CalendarView = ({ currentMonth, setCurrentMonth, selectedDate, setSelectedDate, getEventsForDate, userType, viewMode, setViewMode, showViewToggle = true }) => {
   const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const daysOfWeek = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const accent = userType === 'admin' ? 'admin' : 'student';
@@ -66,13 +93,13 @@ const CalendarView = ({ currentMonth, setCurrentMonth, selectedDate, setSelected
         key={key}
         data-testid={`calendar-day-${dateStr}`}
         onClick={() => setSelectedDate(dateStr)}
-        className={`aspect-square p-2 rounded-lg transition-all relative ${
+        className={`aspect-square p-1 sm:p-2 rounded-lg transition-all relative ${
           isSelected ? (accent === 'admin' ? 'bg-blue-600 text-white shadow-lg' : 'bg-sky-500 text-white shadow-lg')
             : isToday ? (accent === 'admin' ? 'bg-blue-100 text-blue-800 font-semibold' : 'bg-sky-100 text-sky-700 font-semibold')
             : 'hover:bg-slate-100'
         }`}
       >
-        <div className="text-sm">{dayLabel}</div>
+        <div className="text-xs sm:text-sm">{dayLabel}</div>
         {count > 0 && (
           <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 flex gap-0.5">
             {[...Array(Math.min(count, 3))].map((_, i) => (
@@ -118,39 +145,41 @@ const CalendarView = ({ currentMonth, setCurrentMonth, selectedDate, setSelected
   const inactiveToggle = 'bg-slate-100 text-slate-600 hover:bg-slate-200';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 sm:p-6">
       <div className="flex items-center justify-between mb-4">
         <button data-testid="calendar-prev-month" onClick={() => navigate(-1)} className={`p-2 rounded-lg transition-colors ${accent === 'admin' ? 'hover:bg-blue-100 text-blue-600' : 'hover:bg-sky-100 text-sky-500'}`}>
           <ChevronLeft className="w-6 h-6" />
         </button>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 text-center">{headerTitle}</h2>
+        <h2 className="text-lg sm:text-2xl font-bold text-slate-900 text-center">{headerTitle}</h2>
         <button data-testid="calendar-next-month" onClick={() => navigate(1)} className={`p-2 rounded-lg transition-colors ${accent === 'admin' ? 'hover:bg-blue-100 text-blue-600' : 'hover:bg-sky-100 text-sky-500'}`}>
           <ChevronRight className="w-6 h-6" />
         </button>
       </div>
-      <div className="flex justify-center gap-1 mb-4 bg-slate-50 p-1 rounded-lg w-fit mx-auto">
-        <button
-          data-testid="calendar-view-month"
-          onClick={() => setViewMode('month')}
-          className={`${toggleBase} ${viewMode === 'month' ? activeToggle : inactiveToggle}`}
-        >Month</button>
-        <button
-          data-testid="calendar-view-week"
-          onClick={() => setViewMode('week')}
-          className={`${toggleBase} ${viewMode === 'week' ? activeToggle : inactiveToggle}`}
-        >Week</button>
+      {showViewToggle && (
+        <div className="flex justify-center gap-1 mb-4 bg-slate-50 p-1 rounded-lg w-fit mx-auto">
+          <button
+            data-testid="calendar-view-month"
+            onClick={() => setViewMode('month')}
+            className={`${toggleBase} ${viewMode === 'month' ? activeToggle : inactiveToggle}`}
+          >Month</button>
+          <button
+            data-testid="calendar-view-week"
+            onClick={() => setViewMode('week')}
+            className={`${toggleBase} ${viewMode === 'week' ? activeToggle : inactiveToggle}`}
+          >Week</button>
+        </div>
+      )}
+      <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+        {daysOfWeek.map(d => <div key={d} className="text-center text-xs sm:text-sm font-semibold text-slate-600 py-2">{d}</div>)}
       </div>
-      <div className="grid grid-cols-7 gap-2 mb-2">
-        {daysOfWeek.map(d => <div key={d} className="text-center text-sm font-semibold text-slate-600 py-2">{d}</div>)}
-      </div>
-      <div className="grid grid-cols-7 gap-2">{cells}</div>
+      <div className="grid grid-cols-7 gap-1 sm:gap-2">{cells}</div>
     </div>
   );
 };
 
 // ---------------- Section Roster Parser ----------------
-// Parses a "Sec X.xlsx" roster file in the IIMK format
-// Header row layout: Sl. No | Application Number | Roll Number | Candidate Name | IIMK Email | Gender
+// Parses a "Sec X.xlsx" roster file. Expected columns (any order, case-insensitive):
+// Serial Number | Roll No. | Candidate Name | IIMK Email
 const parseSectionRoster = async (file) => {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: 'array' });
@@ -160,7 +189,7 @@ const parseSectionRoster = async (file) => {
   let headerIdx = -1;
   for (let i = 0; i < rows.length; i++) {
     const lower = rows[i].map(c => String(c ?? '').trim().toLowerCase());
-    if (lower.includes('candidate name') && lower.includes('iimk email')) {
+    if (lower.some(h => h.includes('candidate name')) && lower.some(h => h.includes('iimk email'))) {
       headerIdx = i;
       break;
     }
@@ -169,10 +198,10 @@ const parseSectionRoster = async (file) => {
     throw new Error('Could not find header row with "Candidate Name" and "IIMK Email" columns.');
   }
   const headers = rows[headerIdx].map(c => String(c ?? '').trim().toLowerCase());
-  const colName = headers.indexOf('candidate name');
-  const colEmail = headers.indexOf('iimk email');
-  const colRoll = headers.indexOf('roll number');
-  const colGender = headers.indexOf('gender');
+  const colName = headers.findIndex(h => h.includes('candidate name'));
+  const colEmail = headers.findIndex(h => h.includes('iimk email'));
+  const colRoll = headers.findIndex(h => h.includes('roll'));
+  const colGender = headers.findIndex(h => h.includes('gender'));
 
   const students = [];
   for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -188,6 +217,69 @@ const parseSectionRoster = async (file) => {
     });
   }
   return students;
+};
+
+// Triggers a download of the blank section-roster Excel template
+const downloadSectionRosterTemplate = () => {
+  const data = [
+    ['Serial Number', 'Roll No.', 'Candidate Name', 'IIMK Email'],
+    [1, 'EPGP-XX-XXX', 'Full Name', 'name@iimk.ac.in'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Section Roster');
+  XLSX.writeFile(wb, 'section_roster_template.xlsx');
+};
+
+// ---------------- Group Roster Parser ----------------
+// Parses a custom group member list. Expected columns (any order, case-insensitive):
+// Serial Number | Roll No. | Candidate Name | IIMK Email
+const parseGroupRoster = async (file) => {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+  let headerIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const lower = rows[i].map(c => String(c ?? '').trim().toLowerCase());
+    if (lower.some(h => h.includes('candidate name')) && lower.some(h => h.includes('iimk email'))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) {
+    throw new Error('Could not find header row with "Candidate Name" and "IIMK Email" columns.');
+  }
+  const headers = rows[headerIdx].map(c => String(c ?? '').trim().toLowerCase());
+  const colName = headers.findIndex(h => h.includes('candidate name'));
+  const colEmail = headers.findIndex(h => h.includes('iimk email'));
+  const colRoll = headers.findIndex(h => h.includes('roll'));
+
+  const members = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const name = String(r[colName] ?? '').trim();
+    const email = String(r[colEmail] ?? '').trim().toLowerCase();
+    if (!name || !email || !email.includes('@')) continue;
+    members.push({
+      name,
+      email,
+      rollNumber: colRoll >= 0 ? String(r[colRoll] ?? '').trim() : '',
+    });
+  }
+  return members;
+};
+
+// Triggers a download of the blank group-members Excel template
+const downloadGroupTemplate = () => {
+  const data = [
+    ['Serial Number', 'Roll No.', 'Candidate Name', 'IIMK Email'],
+    [1, 'EPGP-XX-XXX', 'Full Name', 'name@iimk.ac.in'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Group Members');
+  XLSX.writeFile(wb, 'group_members_template.xlsx');
 };
 
 // ---------------- Master Schedule Parser ----------------
@@ -268,11 +360,14 @@ const parseMasterSchedule = async (file, createdBy) => {
 };
 
 // ---------------- Section Rosters Manager ----------------
-const SectionRostersManager = ({ rosters, onUploadSection, onClearSection }) => {
+const SectionRostersManager = ({ rosters, currentUser, onUploadSection, onClearSection }) => {
   const [open, setOpen] = useState(false);
   const [activeSec, setActiveSec] = useState('A');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(null); // section to clear
+
+  const isPlacement = currentUser === 'placement@iimk.ac.in';
 
   const handleFile = async (section, e) => {
     setError(''); setBusy(true);
@@ -293,8 +388,10 @@ const SectionRostersManager = ({ rosters, onUploadSection, onClearSection }) => 
     }
   };
 
-  const clearSection = (section) => {
-    onClearSection(section);
+  const clearSection = (section) => setConfirmClear(section);
+  const doConfirmClear = () => {
+    onClearSection(confirmClear);
+    setConfirmClear(null);
   };
 
   const total = SECTIONS.reduce((s, sec) => s + (rosters[sec]?.length || 0), 0);
@@ -302,6 +399,13 @@ const SectionRostersManager = ({ rosters, onUploadSection, onClearSection }) => 
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <ConfirmDialog
+        open={confirmClear !== null}
+        title="Clear Section Roster?"
+        message={`Are you sure you want to remove all students from Section ${confirmClear}? This cannot be undone.`}
+        onConfirm={doConfirmClear}
+        onCancel={() => setConfirmClear(null)}
+      />
       <button
         data-testid="rosters-toggle-btn"
         onClick={() => setOpen(o => !o)}
@@ -317,9 +421,23 @@ const SectionRostersManager = ({ rosters, onUploadSection, onClearSection }) => 
       <div className={`grid transition-all duration-300 ease-out ${open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
         <div className="overflow-hidden">
           <div className="p-6 pt-0 space-y-4">
-            <p className="text-xs text-slate-500">
-              Upload one Excel file per section. Expected columns: <span className="font-mono">Sl. No · Application Number · Roll Number · Candidate Name · IIMK Email · Gender</span>.
-            </p>
+            {isPlacement ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">View only — Placement Office cannot upload or edit section rosters.</p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500">
+                  Upload one Excel file per section. Expected columns: <span className="font-mono">Serial Number · Roll No. · Candidate Name · IIMK Email</span>.
+                </p>
+                <button
+                  data-testid="rosters-download-template"
+                  type="button"
+                  onClick={downloadSectionRosterTemplate}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download Excel template
+                </button>
+              </>
+            )}
 
             {error && <div data-testid="rosters-error" className="text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
 
@@ -342,12 +460,16 @@ const SectionRostersManager = ({ rosters, onUploadSection, onClearSection }) => 
                         </span>
                       </div>
                     </button>
-                    <label data-testid={`rosters-upload-${sec}`} className="mt-2 cursor-pointer inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700">
-                      <Upload className="w-3.5 h-3.5" /> {filled ? 'Replace' : 'Upload'}
-                      <input type="file" accept=".xlsx,.xls" onChange={(e) => handleFile(sec, e)} className="hidden" data-testid={`rosters-file-${sec}`} />
-                    </label>
-                    {filled && (
-                      <button data-testid={`rosters-clear-${sec}`} onClick={() => clearSection(sec)} className="ml-3 text-xs text-slate-500 hover:text-red-600">Clear</button>
+                    {!isPlacement && (
+                      <>
+                        <label data-testid={`rosters-upload-${sec}`} className="mt-2 cursor-pointer inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700">
+                          <Upload className="w-3.5 h-3.5" /> {filled ? 'Replace' : 'Upload'}
+                          <input type="file" accept=".xlsx,.xls" onChange={(e) => handleFile(sec, e)} className="hidden" data-testid={`rosters-file-${sec}`} />
+                        </label>
+                        {filled && (
+                          <button data-testid={`rosters-clear-${sec}`} onClick={() => clearSection(sec)} className="ml-3 text-xs text-slate-500 hover:text-red-600">Clear</button>
+                        )}
+                      </>
                     )}
                   </div>
                 );
@@ -379,12 +501,183 @@ const SectionRostersManager = ({ rosters, onUploadSection, onClearSection }) => 
   );
 };
 
+// ---------------- Groups Manager ----------------
+const GroupsManager = ({ groups, onCreateGroup, onUploadGroup, onDeleteGroup }) => {
+  const [open, setOpen] = useState(false);
+  const [activeGroup, setActiveGroup] = useState(null);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // group name to delete
+
+  const groupNames = Object.keys(groups);
+  const active = activeGroup && groups[activeGroup] ? activeGroup : groupNames[0];
+
+  const createGroup = async () => {
+    const name = newGroupName.trim();
+    if (!name) return;
+    if (groups[name]) { setError(`A group named "${name}" already exists.`); return; }
+    await onCreateGroup(name);
+    setActiveGroup(name);
+    setNewGroupName('');
+    setError('');
+  };
+
+  const handleFile = async (groupName, e) => {
+    setError(''); setBusy(true);
+    const file = e.target.files?.[0];
+    if (!file) { setBusy(false); return; }
+    try {
+      const members = await parseGroupRoster(file);
+      if (members.length === 0) {
+        setError(`No valid members found in ${file.name}. Check the file format.`);
+      } else {
+        await onUploadGroup(groupName, members);
+      }
+    } catch (err) {
+      setError(`${file.name}: ${err.message || 'parse error'}`);
+    } finally {
+      e.target.value = '';
+      setBusy(false);
+    }
+  };
+
+  const deleteGroupClick = (name) => setConfirmDelete(name);
+  const doConfirmDelete = () => {
+    onDeleteGroup(confirmDelete);
+    if (activeGroup === confirmDelete) setActiveGroup(null);
+    setConfirmDelete(null);
+  };
+
+  const total = groupNames.reduce((s, g) => s + (groups[g]?.length || 0), 0);
+  const activeList = active ? (groups[active] || []) : [];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Delete Group?"
+        message={`Are you sure you want to delete the group "${confirmDelete}"? This cannot be undone.`}
+        onConfirm={doConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
+      <button
+        data-testid="groups-toggle-btn"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between p-6 hover:bg-blue-50/40 transition-colors"
+      >
+        <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2 tracking-tight">
+          <Users className="w-5 h-5 text-blue-600" /> Groups
+          <span className="text-xs font-normal text-slate-500 ml-2">({total} member(s) across {groupNames.length} group(s))</span>
+        </h3>
+        <ChevronDown className={`w-5 h-5 text-slate-500 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      <div className={`grid transition-all duration-300 ease-out ${open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+        <div className="overflow-hidden">
+          <div className="p-6 pt-0 space-y-4">
+            <p className="text-xs text-slate-500">
+              Create a custom group (e.g. "Placement Committee") and upload its member list to target events at that group specifically, regardless of section. Expected columns: <span className="font-mono">Serial Number · Roll No. · Candidate Name · IIMK Email</span>.
+            </p>
+            <button
+              data-testid="groups-download-template"
+              type="button"
+              onClick={downloadGroupTemplate}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
+            >
+              <Download className="w-3.5 h-3.5" /> Download Excel template
+            </button>
+
+            {error && <div data-testid="groups-error" className="text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+
+            <div className="flex gap-2">
+              <input
+                data-testid="groups-new-name-input"
+                type="text"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') createGroup(); }}
+                placeholder="New group name"
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+              <button
+                data-testid="groups-create-btn"
+                type="button"
+                onClick={createGroup}
+                disabled={!newGroupName.trim()}
+                className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" /> Create
+              </button>
+            </div>
+
+            {groupNames.length === 0 ? (
+              <p className="text-slate-500 text-center py-6 text-sm">No groups created yet.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {groupNames.map(g => {
+                    const count = groups[g]?.length || 0;
+                    const isActive = active === g;
+                    return (
+                      <div key={g} className={`rounded-xl border ${isActive ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'} bg-white p-3 transition-shadow`}>
+                        <button data-testid={`groups-tab-${g}`} onClick={() => setActiveGroup(g)} className="w-full text-left">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-900 text-sm truncate">{g}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${count > 0 ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`} data-testid={`groups-count-${g}`}>
+                              {count}
+                            </span>
+                          </div>
+                        </button>
+                        <div className="flex items-center gap-3 mt-2">
+                          <label data-testid={`groups-upload-${g}`} className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700">
+                            <Upload className="w-3.5 h-3.5" /> {count > 0 ? 'Replace' : 'Upload'}
+                            <input type="file" accept=".xlsx,.xls" onChange={(e) => handleFile(g, e)} className="hidden" data-testid={`groups-file-${g}`} />
+                          </label>
+                          <button data-testid={`groups-delete-${g}`} onClick={() => deleteGroupClick(g)} className="text-xs text-slate-500 hover:text-red-600">Delete</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {busy && <p className="text-xs text-slate-500">Parsing file…</p>}
+
+                {active && (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 flex justify-between">
+                      <span>{active} members</span>
+                      <span data-testid="groups-active-count">{activeList.length} member(s)</span>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {activeList.length === 0 ? (
+                        <p className="text-slate-500 text-center py-6 text-sm">No members uploaded for "{active}" yet.</p>
+                      ) : activeList.map((m, i) => (
+                        <div key={`${m.email}-${i}`} className="px-3 py-2 text-sm flex justify-between items-center gap-2" data-testid={`groups-row-${active}-${i}`}>
+                          <span className="text-slate-900 truncate">{m.name}</span>
+                          <span className="text-slate-500 font-mono text-xs truncate">{m.email}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ---------------- Master Schedule Uploader ----------------
 const MasterScheduleUploader = ({ events, currentUser, masterMeta, onUploadMaster, onClearMaster }) => {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
+  const isPlacement = currentUser === 'placement@iimk.ac.in';
   const masterEventCount = events.filter(e => e.source === 'master').length;
 
   const handleFile = async (e) => {
@@ -407,12 +700,21 @@ const MasterScheduleUploader = ({ events, currentUser, masterMeta, onUploadMaste
     }
   };
 
-  const clearMasterHandler = () => {
+  const clearMasterClick = () => setConfirmClear(true);
+  const doConfirmClear = () => {
     onClearMaster();
+    setConfirmClear(false);
   };
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <ConfirmDialog
+        open={confirmClear}
+        title="Clear Master Schedule?"
+        message="Are you sure you want to remove all master schedule entries? This cannot be undone."
+        onConfirm={doConfirmClear}
+        onCancel={() => setConfirmClear(false)}
+      />
       <button
         data-testid="master-toggle-btn"
         onClick={() => setOpen(o => !o)}
@@ -428,21 +730,38 @@ const MasterScheduleUploader = ({ events, currentUser, masterMeta, onUploadMaste
       <div className={`grid transition-all duration-300 ease-out ${open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
         <div className="overflow-hidden">
           <div className="p-6 pt-0 space-y-3">
-            <p className="text-xs text-slate-500">
-              Upload the PGP master schedule Excel. The system reads venue columns (e.g. <span className="font-mono">CR A1</span>, <span className="font-mono">CR A2</span>…) and section labels (<span className="font-mono">Sec A</span>, <span className="font-mono">Sec B</span>…) from the header rows, then creates one calendar event per non-empty cell. Re-uploading replaces all previous master-schedule entries.
-            </p>
+            {isPlacement ? (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">View only — Placement Office cannot upload or edit the master schedule.</p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Upload the PGP master schedule Excel. The system reads venue columns (e.g. <span className="font-mono">CR A1</span>, <span className="font-mono">CR A2</span>…) and section labels (<span className="font-mono">Sec A</span>, <span className="font-mono">Sec B</span>…) from the header rows, then creates one calendar event per non-empty cell. Re-uploading replaces all previous master-schedule entries.
+              </p>
+            )}
 
-            <div className="flex flex-wrap gap-2">
-              <label data-testid="master-upload-btn" className="cursor-pointer inline-flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
-                <Upload className="w-4 h-4" /> {masterMeta ? 'Replace Master Schedule' : 'Upload Master Schedule'}
-                <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" data-testid="master-file-input" />
-              </label>
-              {masterMeta && (
-                <button data-testid="master-clear-btn" onClick={clearMasterHandler} className="inline-flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-200 text-sm">
-                  <Trash2 className="w-4 h-4" /> Clear Master Schedule
-                </button>
-              )}
-            </div>
+            {!isPlacement && (
+              <a
+                data-testid="master-download-template"
+                href="/Master_Schedule_Template.xlsx"
+                download
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                <Download className="w-3.5 h-3.5" /> Download master schedule template
+              </a>
+            )}
+
+            {!isPlacement && (
+              <div className="flex flex-wrap gap-2">
+                <label data-testid="master-upload-btn" className="cursor-pointer inline-flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
+                  <Upload className="w-4 h-4" /> {masterMeta ? 'Replace Master Schedule' : 'Upload Master Schedule'}
+                  <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" data-testid="master-file-input" />
+                </label>
+                {masterMeta && (
+                  <button data-testid="master-clear-btn" onClick={clearMasterClick} className="inline-flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-200 text-sm">
+                    <Trash2 className="w-4 h-4" /> Clear Master Schedule
+                  </button>
+                )}
+              </div>
+            )}
 
             {busy && <p className="text-xs text-slate-500">Parsing master schedule…</p>}
             {error && <div data-testid="master-error" className="text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
@@ -464,6 +783,7 @@ const AdminPlatform = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [events, setEvents] = useState([]);
   const [rosters, setRosters] = useState(emptyRosters());
+  const [groups, setGroups] = useState({});
   const [masterMeta, setMasterMeta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -474,8 +794,9 @@ const AdminPlatform = () => {
   const [viewMode, setViewMode] = useState('month');
   const [sectionFilter, setSectionFilter] = useState([]); // empty = all sections
 
-  const blankEvent = { title: '', description: '', time: '', useCustomTime: false, venue: VENUES[0], sections: [], repeatWeekly: false };
+  const blankEvent = { title: '', description: '', time: '', useCustomTime: false, venue: VENUES[0], sections: [] };
   const [newEvent, setNewEvent] = useState(blankEvent);
+  const [confirmDelete, setConfirmDelete] = useState(null); // { id, title }
 
   // Load data from the API once the admin is logged in
   useEffect(() => {
@@ -485,14 +806,16 @@ const AdminPlatform = () => {
       setLoading(true);
       setLoadError('');
       try {
-        const [eventsData, rostersData, masterMetaData] = await Promise.all([
+        const [eventsData, rostersData, groupsData, masterMetaData] = await Promise.all([
           fetchEvents(),
           fetchRosters(),
+          fetchGroups(),
           fetchMasterMeta(),
         ]);
         if (cancelled) return;
         setEvents(eventsData);
         setRosters({ ...emptyRosters(), ...rostersData });
+        setGroups(groupsData || {});
         setMasterMeta(masterMetaData);
       } catch (err) {
         if (!cancelled) setLoadError(err.message || 'Failed to load data from the server.');
@@ -510,7 +833,7 @@ const AdminPlatform = () => {
 
   const getEventsForDate = (date) => visibleEvents.filter(e => e.date === date);
 
-  // Slot availability for the Add Event form: returns { [slot]: { booked: bool, by: 'section' or null } }
+  // Slot availability: for each standard slot, is it booked for selected sections? (green/red on time grid)
   const slotAvailability = (() => {
     const map = {};
     for (const slot of TIME_SLOTS) {
@@ -521,6 +844,28 @@ const AdminPlatform = () => {
       map[slot] = { booked: conflict };
     }
     return map;
+  })();
+
+  // Section availability: for each section, is the currently selected time already booked?
+  const currentTime = newEvent.useCustomTime ? newEvent.time : (TIME_SLOTS.includes(newEvent.time) ? newEvent.time : null);
+  const sectionAvailability = (() => {
+    if (!currentTime) return null;
+    const map = {};
+    for (const sec of [...SECTIONS, ...Object.keys(groups)]) {
+      map[sec] = { booked: events.some(e => e.date === selectedDate && e.time === currentTime && (e.sections || []).includes(sec)) };
+    }
+    return map;
+  })();
+
+  // Custom time conflict: is the custom time already taken for ANY selected section?
+  const customTimeConflict = newEvent.useCustomTime && currentTime && newEvent.sections.length > 0
+    ? newEvent.sections.some(s => sectionAvailability?.[s]?.booked)
+    : false;
+
+  // Block scheduling: conflict exists for selected time + sections (covers both slot and custom time).
+  const scheduleConflict = (() => {
+    if (!currentTime || newEvent.sections.length === 0) return false;
+    return newEvent.sections.some(s => sectionAvailability?.[s]?.booked);
   })();
 
   const toggleSection = (s) => {
@@ -536,8 +881,8 @@ const AdminPlatform = () => {
 
   const handleAddEvent = async () => {
     if (!newEvent.title || !newEvent.time || newEvent.sections.length === 0) return;
-    const toAdd = [];
-    const base = {
+    if (scheduleConflict) return;
+    const newEv = {
       title: newEvent.title,
       description: newEvent.description,
       time: newEvent.time,
@@ -546,25 +891,12 @@ const AdminPlatform = () => {
       source: 'manual',
       createdBy: currentUser,
       createdAt: new Date().toISOString(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+      date: selectedDate,
     };
-    if (newEvent.repeatWeekly) {
-      const sel = new Date(selectedDate);
-      const dow = sel.getDay();
-      const { year, month } = currentMonth;
-      const dim = new Date(year, month + 1, 0).getDate();
-      for (let day = 1; day <= dim; day++) {
-        const d = new Date(year, month, day);
-        if (d.getDay() === dow) {
-          const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-          toAdd.push({ ...base, id: `${Date.now()}-${day}-${Math.random().toString(36).slice(2,7)}`, date: ds });
-        }
-      }
-    } else {
-      toAdd.push({ ...base, id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`, date: selectedDate });
-    }
     try {
-      await createEvents(toAdd);
-      setEvents(prev => [...prev, ...toAdd]);
+      await createEvents([newEv]);
+      setEvents(prev => [...prev, newEv]);
       setNewEvent(blankEvent);
       setShowAddEvent(false);
     } catch (err) {
@@ -572,26 +904,20 @@ const AdminPlatform = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
+    const ev = events.find(e => e.id === id);
+    setConfirmDelete({ id, title: ev?.title || 'this event' });
+  };
+
+  const doConfirmDelete = async () => {
+    const id = confirmDelete.id;
     try {
       await apiDeleteEvent(id);
       setEvents(prev => prev.filter(e => e.id !== id));
     } catch (err) {
       setLoadError(err.message || 'Failed to delete event.');
-    }
-  };
-
-  const handleClearAllEvents = async () => {
-    if (events.length === 0) return;
-    const ok = window.confirm(`Delete all ${events.length} scheduled event(s)? This cannot be undone.`);
-    if (!ok) return;
-    try {
-      await Promise.all(events.map(e => apiDeleteEvent(e.id)));
-      await apiClearMaster();
-      setEvents([]);
-      setMasterMeta(null);
-    } catch (err) {
-      setLoadError(err.message || 'Failed to clear events.');
+    } finally {
+      setConfirmDelete(null);
     }
   };
 
@@ -633,6 +959,37 @@ const AdminPlatform = () => {
     }
   };
 
+  const handleCreateGroup = async (name) => {
+    try {
+      await saveGroup(name, []);
+      setGroups(prev => ({ ...prev, [name]: [] }));
+    } catch (err) {
+      setLoadError(err.message || 'Failed to create group.');
+    }
+  };
+
+  const handleUploadGroup = async (name, members) => {
+    try {
+      await saveGroup(name, members);
+      setGroups(prev => ({ ...prev, [name]: members }));
+    } catch (err) {
+      setLoadError(err.message || 'Failed to save group.');
+    }
+  };
+
+  const handleDeleteGroup = async (name) => {
+    try {
+      await apiDeleteGroup(name);
+      setGroups(prev => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    } catch (err) {
+      setLoadError(err.message || 'Failed to delete group.');
+    }
+  };
+
   if (!currentUser) {
     return <AdminLogin onLogin={setCurrentUser} />;
   }
@@ -641,6 +998,13 @@ const AdminPlatform = () => {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Delete Event?"
+        message={`Are you sure you want to delete "${confirmDelete?.title}"? This cannot be undone.`}
+        onConfirm={doConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
       <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-4">
           <div className="flex items-center gap-3">
@@ -705,7 +1069,8 @@ const AdminPlatform = () => {
               setViewMode={setViewMode}
             />
             <MasterScheduleUploader events={events} currentUser={currentUser} masterMeta={masterMeta} onUploadMaster={handleUploadMaster} onClearMaster={handleClearMaster} />
-            <SectionRostersManager rosters={rosters} onUploadSection={handleUploadSection} onClearSection={handleClearSection} />
+            <SectionRostersManager rosters={rosters} currentUser={currentUser} onUploadSection={handleUploadSection} onClearSection={handleClearSection} />
+            <GroupsManager groups={groups} onCreateGroup={handleCreateGroup} onUploadGroup={handleUploadGroup} onDeleteGroup={handleDeleteGroup} />
           </div>
 
           <div className="space-y-6">
@@ -715,15 +1080,6 @@ const AdminPlatform = () => {
                   {new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </h3>
                 <div className="flex gap-2">
-                  <button
-                    data-testid="admin-clear-all-events"
-                    onClick={handleClearAllEvents}
-                    disabled={events.length === 0}
-                    className="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-100 transition-colors text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Delete every scheduled event"
-                  >
-                    Clear All ({events.length})
-                  </button>
                   <button
                     data-testid="admin-add-event-toggle"
                     onClick={() => setShowAddEvent(!showAddEvent)}
@@ -755,16 +1111,66 @@ const AdminPlatform = () => {
 
                     {/* Sections (first so slot availability is meaningful) */}
                     <div>
-                      <label className="text-xs text-slate-700 font-semibold mb-1.5 block">Target Sections</label>
+                      <label className="text-xs text-slate-700 font-semibold mb-1.5 block">
+                        Target Sections
+                        {sectionAvailability && newEvent.sections.length === 0 && <span className="text-slate-400 font-normal ml-1">· green = free, red = booked at selected time</span>}
+                      </label>
                       <div className="grid grid-cols-5 gap-1">
-                        {SECTIONS.map(s => (
-                          <label key={s} data-testid={`event-section-${s}`} className={`flex items-center justify-center gap-1 text-xs cursor-pointer rounded-md py-1.5 border transition-colors ${newEvent.sections.includes(s) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'}`}>
-                            <input type="checkbox" checked={newEvent.sections.includes(s)} onChange={() => toggleSection(s)} className="hidden" />
-                            <span className="font-medium">{s}</span>
-                          </label>
-                        ))}
+                        {SECTIONS.map(s => {
+                          const isChecked = newEvent.sections.includes(s);
+                          const avail = sectionAvailability ? sectionAvailability[s] : null;
+                          let cls;
+                          if (isChecked) {
+                            cls = avail?.booked
+                              ? 'bg-red-600 text-white border-red-600'
+                              : 'bg-blue-600 text-white border-blue-600';
+                          } else if (avail) {
+                            cls = avail.booked
+                              ? 'bg-red-50 text-red-700 border-red-200 hover:border-red-400'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:border-emerald-400';
+                          } else {
+                            cls = 'bg-white text-slate-700 border-slate-200 hover:border-blue-300';
+                          }
+                          return (
+                            <label key={s} data-testid={`event-section-${s}`} className={`flex items-center justify-center gap-1 text-xs cursor-pointer rounded-md py-1.5 border transition-colors ${cls}`}>
+                              <input type="checkbox" checked={isChecked} onChange={() => toggleSection(s)} className="hidden" />
+                              <span className="font-medium">{s}</span>
+                            </label>
+                          );
+                        })}
                       </div>
                     </div>
+
+                    {/* Custom groups */}
+                    {Object.keys(groups).length > 0 && (
+                      <div>
+                        <label className="text-xs text-slate-700 font-semibold mb-1.5 block">Target Groups</label>
+                        <div className="grid grid-cols-2 gap-1">
+                          {Object.keys(groups).map(g => {
+                            const isChecked = newEvent.sections.includes(g);
+                            const avail = sectionAvailability ? sectionAvailability[g] : null;
+                            let cls;
+                            if (isChecked) {
+                              cls = avail?.booked
+                                ? 'bg-red-600 text-white border-red-600'
+                                : 'bg-blue-600 text-white border-blue-600';
+                            } else if (avail) {
+                              cls = avail.booked
+                                ? 'bg-red-50 text-red-700 border-red-200 hover:border-red-400'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:border-emerald-400';
+                            } else {
+                              cls = 'bg-white text-slate-700 border-slate-200 hover:border-blue-300';
+                            }
+                            return (
+                              <label key={g} data-testid={`event-group-${g}`} className={`flex items-center justify-center gap-1 text-xs cursor-pointer rounded-md py-1.5 px-2 border transition-colors truncate ${cls}`}>
+                                <input type="checkbox" checked={isChecked} onChange={() => toggleSection(g)} className="hidden" />
+                                <span className="font-medium truncate">{g}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Time slots with availability */}
                     <div>
@@ -804,13 +1210,30 @@ const AdminPlatform = () => {
                         >Other (custom time)…</button>
                       </div>
                       {newEvent.useCustomTime && (
-                        <input
-                          data-testid="event-time-input"
-                          type="time"
-                          value={newEvent.time}
-                          onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
-                          className="mt-2 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                        />
+                        <div className="mt-2">
+                          <input
+                            data-testid="event-time-input"
+                            type="time"
+                            value={newEvent.time}
+                            onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${customTimeConflict ? 'border-red-400' : newEvent.time && newEvent.sections.length > 0 ? 'border-emerald-400' : 'border-slate-300'}`}
+                          />
+                          {newEvent.time && newEvent.sections.length > 0 && (
+                            <p className={`text-xs mt-1 ${customTimeConflict ? 'text-red-600' : 'text-emerald-600'}`}>
+                              {customTimeConflict ? 'This time is already booked for one or more selected sections.' : 'This time is free for all selected sections.'}
+                            </p>
+                          )}
+                          {newEvent.time && newEvent.sections.length === 0 && sectionAvailability && (
+                            <div className="mt-2">
+                              <p className="text-xs text-slate-500 mb-1">Section availability at this time:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {[...SECTIONS, ...Object.keys(groups)].map(s => (
+                                  <span key={s} className={`text-xs px-2 py-0.5 rounded font-medium ${sectionAvailability[s]?.booked ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{s}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -828,34 +1251,19 @@ const AdminPlatform = () => {
                       </select>
                     </div>
 
-                    <div className="border-t border-blue-200 pt-3">
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          data-testid="event-repeat-weekly"
-                          type="checkbox"
-                          checked={newEvent.repeatWeekly}
-                          onChange={(e) => setNewEvent({ ...newEvent, repeatWeekly: e.target.checked })}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-slate-700 font-medium">
-                          Repeat weekly for this month
-                          {newEvent.repeatWeekly && (
-                            <span className="text-blue-600 text-xs ml-1">
-                              (All {['Sundays','Mondays','Tuesdays','Wednesdays','Thursdays','Fridays','Saturdays'][new Date(selectedDate).getDay()]} this month)
-                            </span>
-                          )}
-                        </span>
-                      </label>
-                    </div>
-
+                    {scheduleConflict && (
+                      <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                        Cannot schedule: one or more selected sections already have an event at this time on this date.
+                      </p>
+                    )}
                     <div className="flex gap-2">
                       <button
                         data-testid="event-create-btn"
                         onClick={handleAddEvent}
-                        disabled={!newEvent.title || !newEvent.time || newEvent.sections.length === 0}
+                        disabled={!newEvent.title || !newEvent.time || newEvent.sections.length === 0 || scheduleConflict}
                         className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {newEvent.repeatWeekly ? 'Create Recurring Events' : 'Create'}
+                        Create
                       </button>
                       <button
                         data-testid="event-cancel-btn"
@@ -895,7 +1303,7 @@ const AdminPlatform = () => {
                             <p className="text-xs text-slate-500">by {event.createdBy}</p>
                           </div>
                         </div>
-                        {event.createdBy === currentUser || event.source === 'master' ? (
+                        {event.createdBy === currentUser ? (
                           <button
                             data-testid={`admin-delete-${event.id}`}
                             onClick={() => handleDelete(event.id)}
@@ -905,7 +1313,7 @@ const AdminPlatform = () => {
                             <Trash2 className="w-4 h-4" />
                           </button>
                         ) : (
-                          <div className="text-slate-300 p-1 ml-2" title="Only the creator can delete this event">
+                          <div className="text-slate-300 p-1 ml-2" title="Only the admin who scheduled this event can delete it">
                             <Lock className="w-4 h-4" />
                           </div>
                         )}
@@ -945,6 +1353,7 @@ const AdminLogin = ({ onLogin }) => {
     <div className="min-h-screen bg-white flex flex-col relative overflow-hidden">
       <div className="pointer-events-none absolute -top-32 -left-32 w-96 h-96 rounded-full bg-blue-100/60 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 -right-32 w-[28rem] h-[28rem] rounded-full bg-sky-100/60 blur-3xl" />
+      <IIMKHeader />
       <div className="bg-white border-b border-slate-200 relative">
         <div className="max-w-6xl mx-auto flex items-center gap-3 px-6 py-4">
           <div className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600">
@@ -968,7 +1377,7 @@ const AdminLogin = ({ onLogin }) => {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
-              placeholder="e.g. Programme@iimk"
+              placeholder="e.g. programme@iimk.ac.in"
             />
           </div>
           <div>

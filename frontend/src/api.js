@@ -33,6 +33,20 @@ export const saveRoster = (section, students) =>
     body: JSON.stringify({ section, students }),
   }).then(handle);
 
+// ---------------- Groups ----------------
+export const fetchGroups = () =>
+  fetch(`${API_URL}/api/groups`).then(handle);
+
+export const saveGroup = (name, members) =>
+  fetch(`${API_URL}/api/groups`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, members }),
+  }).then(handle);
+
+export const deleteGroup = (name) =>
+  fetch(`${API_URL}/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(handle);
+
 // ---------------- Master Schedule ----------------
 export const uploadMaster = (events, meta) =>
   fetch(`${API_URL}/api/master`, {
