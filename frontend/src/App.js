@@ -18,6 +18,28 @@ const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'LSM', 'FIN'];
 // PGP-29 standard time slots; "Other" lets admins pick any time
 const TIME_SLOTS = ['09.15 – 10.30', '10.45 – 12.00', '12.15 – 13.30', '14.30 – 15.45', '16.00 – 17.15'];
 
+// Extracts a [startMinutes, endMinutes] range from a time string like "09.15 – 10.30" or "09:15-10:30".
+// Returns null if no time could be parsed.
+const parseTimeRange = (str) => {
+  const matches = String(str || '').match(/(\d{1,2})[.:](\d{2})/g);
+  if (!matches || matches.length === 0) return null;
+  const toMinutes = (m) => {
+    const [h, mm] = m.split(/[.:]/).map(Number);
+    return h * 60 + mm;
+  };
+  const start = toMinutes(matches[0]);
+  const end = matches.length > 1 ? toMinutes(matches[1]) : start;
+  return [start, end];
+};
+
+// Do two time-range strings overlap?
+const timeRangesOverlap = (a, b) => {
+  const ra = parseTimeRange(a);
+  const rb = parseTimeRange(b);
+  if (!ra || !rb) return a === b;
+  return ra[0] < rb[1] && rb[0] < ra[1];
+};
+
 // Tokens in the master schedule grid that aren't a real class
 const MASTER_SKIP_TOKENS = new Set(['LUNCH BREAK', 'LUNCH', 'BREAK', '']);
 
@@ -798,7 +820,7 @@ const AdminPlatform = () => {
   const [viewMode, setViewMode] = useState('month');
   const [sectionFilter, setSectionFilter] = useState([]); // empty = all sections
 
-  const blankEvent = { title: '', description: '', time: '', useCustomTime: false, venue: VENUES[0], sections: [] };
+  const blankEvent = { title: '', description: '', time: '', customStart: '', customEnd: '', useCustomTime: false, venue: VENUES[0], sections: [] };
   const [newEvent, setNewEvent] = useState(blankEvent);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, title }
 
@@ -842,7 +864,7 @@ const AdminPlatform = () => {
     const map = {};
     for (const slot of TIME_SLOTS) {
       const conflict = events.some(e =>
-        e.date === selectedDate && e.time === slot
+        e.date === selectedDate && timeRangesOverlap(e.time, slot)
         && (newEvent.sections.length === 0 || (e.sections || []).some(s => newEvent.sections.includes(s)))
       );
       map[slot] = { booked: conflict };
@@ -850,13 +872,16 @@ const AdminPlatform = () => {
     return map;
   })();
 
-  // Section availability: for each section, is the currently selected time already booked?
-  const currentTime = newEvent.useCustomTime ? newEvent.time : (TIME_SLOTS.includes(newEvent.time) ? newEvent.time : null);
+  // Section availability: for each section, does the currently selected time range overlap a booking?
+  const customTimeLabel = newEvent.customStart && newEvent.customEnd
+    ? `${newEvent.customStart} – ${newEvent.customEnd}`
+    : '';
+  const currentTime = newEvent.useCustomTime ? (customTimeLabel || null) : (TIME_SLOTS.includes(newEvent.time) ? newEvent.time : null);
   const sectionAvailability = (() => {
     if (!currentTime) return null;
     const map = {};
     for (const sec of [...SECTIONS, ...Object.keys(groups)]) {
-      map[sec] = { booked: events.some(e => e.date === selectedDate && e.time === currentTime && (e.sections || []).includes(sec)) };
+      map[sec] = { booked: events.some(e => e.date === selectedDate && timeRangesOverlap(e.time, currentTime) && (e.sections || []).includes(sec)) };
     }
     return map;
   })();
@@ -884,12 +909,12 @@ const AdminPlatform = () => {
   };
 
   const handleAddEvent = async () => {
-    if (!newEvent.title || !newEvent.time || newEvent.sections.length === 0) return;
+    if (!newEvent.title || !currentTime || newEvent.sections.length === 0) return;
     if (scheduleConflict) return;
     const newEv = {
       title: newEvent.title,
       description: newEvent.description,
-      time: newEvent.time,
+      time: currentTime,
       venue: newEvent.venue,
       sections: newEvent.sections,
       source: 'manual',
@@ -1217,27 +1242,50 @@ const AdminPlatform = () => {
                         <button
                           type="button"
                           data-testid="event-slot-other"
-                          onClick={() => setNewEvent({ ...newEvent, useCustomTime: true, time: newEvent.time || '' })}
+                          onClick={() => setNewEvent({ ...newEvent, useCustomTime: true, time: '' })}
                           className={`text-xs font-medium py-2 px-2 rounded-lg border transition-colors col-span-2 ${newEvent.useCustomTime ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'}`}
                         >Other (custom time)…</button>
                       </div>
                       {newEvent.useCustomTime && (
                         <div className="mt-2">
-                          <input
-                            data-testid="event-time-input"
-                            type="time"
-                            value={newEvent.time}
-                            onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
-                            className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${customTimeConflict ? 'border-red-400' : newEvent.time && newEvent.sections.length > 0 ? 'border-emerald-400' : 'border-slate-300'}`}
-                          />
-                          {newEvent.time && newEvent.sections.length > 0 && (
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <label className="text-xs text-slate-500 mb-1 block">Start time</label>
+                              <input
+                                data-testid="event-time-start-input"
+                                type="time"
+                                step="60"
+                                lang="en-GB"
+                                value={newEvent.customStart}
+                                onChange={(e) => setNewEvent({ ...newEvent, customStart: e.target.value })}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${customTimeConflict ? 'border-red-400' : customTimeLabel && newEvent.sections.length > 0 ? 'border-emerald-400' : 'border-slate-300'}`}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <label className="text-xs text-slate-500 mb-1 block">End time</label>
+                              <input
+                                data-testid="event-time-end-input"
+                                type="time"
+                                step="60"
+                                lang="en-GB"
+                                min={newEvent.customStart || undefined}
+                                value={newEvent.customEnd}
+                                onChange={(e) => setNewEvent({ ...newEvent, customEnd: e.target.value })}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${customTimeConflict ? 'border-red-400' : customTimeLabel && newEvent.sections.length > 0 ? 'border-emerald-400' : 'border-slate-300'}`}
+                              />
+                            </div>
+                          </div>
+                          {newEvent.customStart && newEvent.customEnd && newEvent.customEnd <= newEvent.customStart && (
+                            <p className="text-xs text-red-600 mt-1">End time must be after start time.</p>
+                          )}
+                          {customTimeLabel && newEvent.sections.length > 0 && (
                             <p className={`text-xs mt-1 ${customTimeConflict ? 'text-red-600' : 'text-emerald-600'}`}>
-                              {customTimeConflict ? 'This time is already booked for one or more selected sections.' : 'This time is free for all selected sections.'}
+                              {customTimeConflict ? 'This time slot is already booked for one or more selected sections.' : 'This time slot is free for all selected sections.'}
                             </p>
                           )}
-                          {newEvent.time && newEvent.sections.length === 0 && sectionAvailability && (
+                          {customTimeLabel && newEvent.sections.length === 0 && sectionAvailability && (
                             <div className="mt-2">
-                              <p className="text-xs text-slate-500 mb-1">Section availability at this time:</p>
+                              <p className="text-xs text-slate-500 mb-1">Section availability for this time slot:</p>
                               <div className="flex flex-wrap gap-1">
                                 {[...SECTIONS, ...Object.keys(groups)].map(s => (
                                   <span key={s} className={`text-xs px-2 py-0.5 rounded font-medium ${sectionAvailability[s]?.booked ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{s}</span>
@@ -1272,7 +1320,7 @@ const AdminPlatform = () => {
                       <button
                         data-testid="event-create-btn"
                         onClick={handleAddEvent}
-                        disabled={!newEvent.title || !newEvent.time || newEvent.sections.length === 0 || scheduleConflict}
+                        disabled={!newEvent.title || !currentTime || (newEvent.useCustomTime && newEvent.customEnd <= newEvent.customStart) || newEvent.sections.length === 0 || scheduleConflict}
                         className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Create
