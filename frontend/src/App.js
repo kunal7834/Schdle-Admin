@@ -908,6 +908,19 @@ const AdminPlatform = () => {
     setSectionFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   };
 
+  // Reset the calendar back to the current month/day so the next admin to log in
+  // doesn't see the previous admin's view.
+  const handleLogout = () => {
+    const now = new Date();
+    setCurrentMonth({ year: now.getFullYear(), month: now.getMonth() });
+    setSelectedDate(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`);
+    setViewMode('month');
+    setSectionFilter([]);
+    setShowAddEvent(false);
+    setNewEvent(blankEvent);
+    setCurrentUser(null);
+  };
+
   const handleAddEvent = async () => {
     if (!newEvent.title || !currentTime || newEvent.sections.length === 0) return;
     if (scheduleConflict) return;
@@ -1055,7 +1068,7 @@ const AdminPlatform = () => {
               </p>
             </div>
           </div>
-          <button data-testid="admin-logout-btn" onClick={() => setCurrentUser(null)} className="bg-slate-900 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium">Logout</button>
+          <button data-testid="admin-logout-btn" onClick={handleLogout} className="bg-slate-900 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium">Logout</button>
         </div>
       </div>
 
