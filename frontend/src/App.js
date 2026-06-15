@@ -517,10 +517,14 @@ const GroupsManager = ({ groups, onCreateGroup, onUploadGroup, onDeleteGroup }) 
     const name = newGroupName.trim();
     if (!name) return;
     if (groups[name]) { setError(`A group named "${name}" already exists.`); return; }
-    await onCreateGroup(name);
-    setActiveGroup(name);
-    setNewGroupName('');
-    setError('');
+    try {
+      await onCreateGroup(name);
+      setActiveGroup(name);
+      setNewGroupName('');
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to create group.');
+    }
   };
 
   const handleFile = async (groupName, e) => {
@@ -927,7 +931,9 @@ const AdminPlatform = () => {
       setEvents(prev => [...prev.filter(ev => ev.source !== 'master'), ...parsedEvents]);
       setMasterMeta(meta);
     } catch (err) {
-      setLoadError(err.message || 'Failed to upload master schedule.');
+      const message = err.message || 'Failed to upload master schedule.';
+      setLoadError(message);
+      throw new Error(message);
     }
   };
 
@@ -946,7 +952,9 @@ const AdminPlatform = () => {
       await saveRoster(section, students);
       setRosters(prev => ({ ...prev, [section]: students }));
     } catch (err) {
-      setLoadError(err.message || 'Failed to save roster.');
+      const message = err.message || 'Failed to save roster.';
+      setLoadError(message);
+      throw new Error(message);
     }
   };
 
@@ -964,7 +972,9 @@ const AdminPlatform = () => {
       await saveGroup(name, []);
       setGroups(prev => ({ ...prev, [name]: [] }));
     } catch (err) {
-      setLoadError(err.message || 'Failed to create group.');
+      const message = err.message || 'Failed to create group.';
+      setLoadError(message);
+      throw new Error(message);
     }
   };
 
@@ -973,7 +983,9 @@ const AdminPlatform = () => {
       await saveGroup(name, members);
       setGroups(prev => ({ ...prev, [name]: members }));
     } catch (err) {
-      setLoadError(err.message || 'Failed to save group.');
+      const message = err.message || 'Failed to save group.';
+      setLoadError(message);
+      throw new Error(message);
     }
   };
 

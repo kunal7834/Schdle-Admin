@@ -171,7 +171,13 @@ app.post('/api/master', async (req, res) => {
     await Event.deleteMany({ source: 'master' });
 
     if (Array.isArray(events) && events.length > 0) {
-      await Event.insertMany(events, { ordered: false });
+      const seen = new Set();
+      const deduped = events.filter((e) => {
+        if (seen.has(e.id)) return false;
+        seen.add(e.id);
+        return true;
+      });
+      await Event.insertMany(deduped, { ordered: false });
     }
 
     if (meta) {
