@@ -17,17 +17,34 @@ let connectionPromise = null;
 const connectDB = () => {
   if (mongoose.connection.readyState === 1) return Promise.resolve();
   if (!connectionPromise) {
-    connectionPromise = mongoose.connect(MONGODB_URI);
+    if (!MONGODB_URI) {
+      return Promise.reject(new Error('MONGODB_URI environment variable is not set'));
+    }
+    connectionPromise = mongoose.connect(MONGODB_URI).catch((err) => {
+      // Reset so the next request can retry instead of reusing a rejected promise forever
+      connectionPromise = null;
+      throw err;
+    });
   }
   return connectionPromise;
 };
+
+// Health check that doesn't require a DB connection, useful for diagnosing deployment issues
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    mongoConfigured: Boolean(MONGODB_URI),
+    mongoConnected: mongoose.connection.readyState === 1,
+  });
+});
 
 app.use(async (req, res, next) => {
   try {
     await connectDB();
     next();
   } catch (err) {
-    res.status(500).json({ error: 'Database connection failed' });
+    console.error('Database connection failed:', err.message);
+    res.status(500).json({ error: 'Database connection failed', details: err.message });
   }
 });
 
