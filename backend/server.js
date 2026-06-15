@@ -20,7 +20,9 @@ const connectDB = () => {
     if (!MONGODB_URI) {
       return Promise.reject(new Error('MONGODB_URI environment variable is not set'));
     }
-    connectionPromise = mongoose.connect(MONGODB_URI).catch((err) => {
+    connectionPromise = mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 8000,
+    }).catch((err) => {
       // Reset so the next request can retry instead of reusing a rejected promise forever
       connectionPromise = null;
       throw err;
@@ -28,6 +30,10 @@ const connectDB = () => {
   }
   return connectionPromise;
 };
+
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err.message);
+});
 
 // Health check that doesn't require a DB connection, useful for diagnosing deployment issues
 app.get('/api/health', (req, res) => {
